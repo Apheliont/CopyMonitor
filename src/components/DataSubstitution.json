@@ -1,0 +1,24 @@
+{
+  "tableHeaders": {
+      "PositionID": "Позиция №",
+      "ClipID": "Клип №",
+      "GraphicID": "Графика №",
+      "PathID": "Путь №",
+      "Status": "Статус",
+      "Data": "Дата",
+      "Workstation": "Станция",
+      "Action": "Тип",
+      "name": "Название",
+      "ExtID": "Внешний №",
+      "TargetServer": "Целевой сервер",
+      "TargetServerID": "Целевой сервер №",
+      "ServerName": "Сервер",
+      "SourceServer": "Исходный сервер",
+      "SrcServerName": "Имя сервера",
+      "SrcPathName": "Исходный путь",
+      "TargetFile": "Целевой файл",
+      "SourceFile": "Исходный файл",
+      "priority": "Приоритет",
+      "StartDate": "Дата начала"
+  }
+}
