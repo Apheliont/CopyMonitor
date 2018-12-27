@@ -1,38 +1,49 @@
+require('dotenv').config({path: './variables.env'});
+const path = require('path');
+const fs = require('fs');
+
 const express = require('express');
 const sql = require('mssql');
 const socketIO = require('socket.io');
+const https = require('https');
 const http = require('http');
 
-const path = require('path');
+// moment init
+const moment = require('moment');
+moment.locale('ru');
+
+
 const app = express();
 const server = http.createServer(app);
 const io = socketIO(server);
 
 const port = process.env.port || 3000;
-const vuePath = path.join(__dirname, '..');
+const vuePath = path.join(__dirname, '..', 'public');
 
 const config = {
-  user: '***',
-  password: '***',
-  server: '***',
-  database: '***',
+  pool: {
+    max: 10,
+    min: 0,
+    idleTimeoutMillis: 30000
+  },
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  server: process.env.DB_HOST,
+  database: process.env.DB_DBNAME,
   parseJSON: true
 };
 
 app.use(express.static(vuePath));
 //---------------------------------------------
 
-const fetchData = async function () {
-  try {
-      const connectionPool = await sql.connect(config);
-      return await connectionPool.request()
-      .query(`SELECT cq.PositionID, cq.ClipID, cq.GraphicID, cq.PathID, cp.Status, cp.Data,
+const connectionPool = new sql.ConnectionPool(config);
+
+const dbQuery = `SELECT cq.PositionID, cq.ClipID, cq.GraphicID, cq.PathID, cp.Status, cp.Data,
    ISNULL(cp.WorkServer, cq.WorkComp) as Workstation,cq.Action,
    ISNULL(c.ClipName, g.GraphicName) as name,
-   ISNULL(cex.ExternID, gex.ExtID) as ExtID,cp.TargetServer, cq.TargetServerID, ts.ServerName,cp.SourceServer, Servers.ServerName AS SrcServerName,
+   ISNULL(cex.ExternID, gex.ExtID) as ExtID,cp.TargetServer, cq.TargetServerID, ts.ServerName,cp.SourceServer, Servers.ServerName AS    SrcServerName,
    ISNULL(Paths.PathName, GraphicPaths.PathName) AS SrcPathName,cp.TargetFile,cp.SourceFile,cq.priority,cp.StartDate
   FROM CopyQueue AS cq WITH (NOLOCK)
-  
   LEFT JOIN CopyProgress AS cp  WITH (NOLOCK) ON cp.PositionID = cq.PositionID  
   LEFT JOIN Clips AS c WITH (NOLOCK) ON c.ClipID = cq.ClipID 			
   LEFT JOIN Graphics AS g WITH (NOLOCK) ON g.GraphicID = cq.GraphicID  
@@ -44,54 +55,61 @@ const fetchData = async function () {
   LEFT JOIN Paths WITH (NOLOCK) ON Paths.PathID = cq.SourcePathClipID 		 
   LEFT JOIN GraphicPaths WITH (NOLOCK) ON GraphicPaths.GraphicPathID = cq.SourcePathGraphicID 		 
   LEFT JOIN Servers WITH (NOLOCK) ON Servers.ServerID = ISNULL(psl.ServerID, gpsl.ServerID) 
-  ORDER BY cq.priority, cq.Pos`);
-  } catch (err) {
-    console.log(err);
+  ORDER BY cq.priority, cq.Pos`;
+
+
+const fetcher = {
+  connectedUserCounter: 0,
+  userJoin() {
+    this.connectedUserCounter += 1;
+    if (this.connectedUserCounter === 1) {
+      this.getDataFromDB();
+    }
+  },
+  userLeft() {
+    this.connectedUserCounter = this.connectedUserCounter - 1 >= 0 ? this.connectedUserCounter - 1 : 0;
+  },
+  getConnectedUsers() {
+    return this.connectedUserCounter;
+  },
+  async getDataFromDB() {
+    const pool = await connectionPool.connect();
+    try {
+      const request = await pool.request();
+
+      const longPolling = () => {
+        if (this.connectedUserCounter === 0) {
+          pool.close();
+          return false;
+        }
+        setTimeout(() => {
+          request.query(dbQuery, (error, result) => {
+            if (error) {
+              console.log(`Query to DB failed: ${error}`);
+            } else {
+              io.emit('newData', result.recordset);
+              longPolling();
+            }
+          })
+        }, process.env.POOLING_INTERVAL);
+
+      };
+      longPolling(); //run longpolling
+    } catch (err) {
+      console.log(`SQL error omg: ${err}`);
+    }
   }
 };
 
-
-const longPooling = {
-    connectedUserCounter: 0,
-    isRunning: false,
-    fetch: function fetch() {
-      if (this.isRunning) {
-        return false;
-      }
-      const fetchSome = () => {
-        this.isRunning = true;
-        fetchData().then(data => {
-          io.emit('newData', data.recordset);
-          sql.close();
-          setTimeout(() => {
-            if (this.connectedUserCounter === 0) {
-              this.isRunning = false;
-              return false;
-            }
-            fetchSome();
-          }, 1000);
-        });
-      };
-      fetchSome();
-    }
-};
-
-
+const ipRegExp = /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/;
 io.on('connection', (socket) => {
-  longPooling.connectedUserCounter++;
-  console.log(`New user connected. Total: ${longPooling.connectedUserCounter}`);
-
-  longPooling.fetch();
+  fetcher.userJoin();
+  console.log(`${moment(Date.now()).format('DD/MM/YYYY HH:mm:ss')} New user connected (IP: ${ipRegExp.exec(socket.client.conn.remoteAddress)[0]}). Total: ${fetcher.getConnectedUsers()}`);
 
 
   socket.on('disconnect', () => {
-    longPooling.connectedUserCounter--;
-    console.log(`User disconnected. Total: ${longPooling.connectedUserCounter}`);
-
-    if (longPooling.connectedUserCounter < 0) {
-      // защита от ошибок с коннектом
-      longPooling.connectedUserCounter = 0;
-    }
+    fetcher.userLeft();
+    console.log(`${moment(Date.now()).format('DD/MM/YYYY HH:mm:ss')} User disconnected (IP: ${ipRegExp.exec(socket.client.conn.remoteAddress)[0]}). Total: ${fetcher.getConnectedUsers()}`);
   });
 });
 

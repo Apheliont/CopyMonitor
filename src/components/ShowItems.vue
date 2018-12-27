@@ -111,6 +111,18 @@
       },
       enter: function (el, done) {
         const delay = el.dataset.index * 50;
+        // let animationId;
+        // const scrollTo = this.$refs.tabList.$el.scrollLeft - 300 > 0 ? this.$refs.tabList.$el.scrollLeft - 300 : 0;
+        // const animate = () => {
+        //   if (this.$refs.tabList.$el.scrollLeft - 15 > scrollTo) {
+        //     this.$refs.tabList.$el.scrollLeft -= 15;
+        //     animationId = window.requestAnimationFrame(animate);
+        //   } else {
+        //     this.$refs.tabList.$el.scrollLeft = scrollTo;
+        //     cancelAnimationFrame(animationId);
+        //   }
+        // };
+        // animate();
         setTimeout(function () {
           Velocity(
             el,

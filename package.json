@@ -10,6 +10,8 @@
     "build": "cross-env NODE_ENV=production webpack --progress --hide-modules"
   },
   "dependencies": {
+    "dotenv": "^5.0.1",
+    "moment": "^2.21.0",
     "mssql": "^4.1.0",
     "nodemon": "^1.12.5",
     "socket.io": "^2.0.4",

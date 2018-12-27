@@ -11,3 +11,9 @@ new Vue({
   store,
   render: h => h(App)
 });
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').then(() => {
+    console.log('SW registered!');
+  });
+}
